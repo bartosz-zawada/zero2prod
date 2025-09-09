@@ -88,4 +88,7 @@ set -gx DATABASE_URL postgres://$APP_USER:$APP_USER_PWD@localhost:$DB_PORT/$APP_
 echo >&2 -e "\n> Creating database $APP_DB_NAME"
 sqlx database create
 
+echo >&2 -e "\n> Executing migrations"
+sqlx migrate run
+
 echo >&2 -e "\n> All done, you're ready to go!"
