@@ -12,4 +12,3 @@ async fn main() -> Result<(), std::io::Error> {
 
     run(listener)?.await
 }
-
