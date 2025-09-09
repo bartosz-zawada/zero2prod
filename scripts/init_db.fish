@@ -24,12 +24,7 @@ function set-database-variables
     set-with-default APP_DB_NAME newsletter
 end
 
-function run-db-container -a container
-    echo >&2 -e "> Removing existing $container container"
-    docker rm -f $container
-    echo >&2
-
-    echo >&2 "> Starting new $container container"
+function docker-run -a container
     docker run \
         --env POSTGRES_USER=$SUPERUSER \
         --env POSTGRES_PASSWORD=$SUPERUSER_PWD \
@@ -43,16 +38,20 @@ function run-db-container -a container
         postgres -N 1000
 end
 
-function wait-until-healthy -a container
-    function _db-container-health -V container
-        command docker inspect -f "{{.State.Health.Status}}" $container
-    end
+function docker-exists -a container
+    [ (docker inspect --format "{{.State.Running}}" $container 2>/dev/null) ]
+end
 
+function docker-is-healthy -a container
+    test (docker inspect --format "{{.State.Health.Status}}" $container 2>/dev/null) = healthy
+end
+
+function wait-until-healthy -a container
     set -l timeout 10
     set -l waited 0
     set -l period 1
 
-    while test (_db-container-health) != healthy
+    while not docker-is-healthy $container
         sleep $period
         set waited (math $waited + $period)
         if test $waited -ge $timeout
@@ -70,25 +69,46 @@ assert-sqlx-is-installed
 # Set the necessary env variables
 set-database-variables
 
+# Ensure the Postgres container is working
 set -l container postgres
-run-db-container $container
 
-echo >&2 -e "\n> Waiting for $container container to be healthy"
-wait-until-healthy $container
+if test "$argv[1]" = recreate
+    echo >&2 "> Database recreation enabled - Deleting $container container"
+    docker rm -f $container
+end
 
-echo >&2 -e "\n> Creating user $APP_USER in database"
-set -l CREATE_QUERY "CREATE USER $APP_USER WITH PASSWORD '$APP_USER_PWD';"
-docker exec -it "$container" psql -U "$SUPERUSER" -c "$CREATE_QUERY"
+if not docker-is-healthy $container
+    set -l fresh_container false
+    if docker-exists $container
+        echo >&2 "> $container container already exists - Starting"
+        docker start $container
+    else
+        echo >&2 "> $container container does not exist - Creating"
+        docker-run $container
+        set fresh_container true
+    end
 
-echo >&2 -e "\n> Providing user $APP_USER with CREATEDB privileges"
-set -l GRANT_QUERY "ALTER USER $APP_USER CREATEDB;"
-docker exec -it "$container" psql -U "$SUPERUSER" -c "$GRANT_QUERY"
+    if not docker-is-healthy $container
+        echo >&2 -e "\n> Waiting for $container container to be healthy"
+        wait-until-healthy $container
+    end
 
+    if [ $fresh_container ]
+        echo >&2 -e "\n> Creating user $APP_USER in database"
+        set -l CREATE_QUERY "CREATE USER $APP_USER WITH PASSWORD '$APP_USER_PWD';"
+        docker exec -it "$container" psql -U "$SUPERUSER" -c "$CREATE_QUERY"
+
+        echo >&2 -e "\n> Providing user $APP_USER with CREATEDB privileges"
+        set -l GRANT_QUERY "ALTER USER $APP_USER CREATEDB;"
+        docker exec -it "$container" psql -U "$SUPERUSER" -c "$GRANT_QUERY"
+    end
+
+    echo >&2
+end
+
+# Set up the database
 set -gx DATABASE_URL postgres://$APP_USER:$APP_USER_PWD@localhost:$DB_PORT/$APP_DB_NAME
-echo >&2 -e "\n> Creating database $APP_DB_NAME"
-sqlx database create
-
-echo >&2 -e "\n> Executing migrations"
-sqlx migrate run
+echo >&2 -e "> Setting up database $APP_DB_NAME, and running migrations"
+sqlx database setup
 
 echo >&2 -e "\n> All done, you're ready to go!"
