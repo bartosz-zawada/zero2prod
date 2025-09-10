@@ -24,6 +24,7 @@ uuid = { version = "1.18.1", features = ["v4"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 tracing-bunyan-formatter = "0.3"
+tracing-log = "0.2"
 
 
 [dev-dependencies]
