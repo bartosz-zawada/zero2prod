@@ -1,8 +1,9 @@
 use std::net::{SocketAddr, TcpListener};
 
 use actix_web::http::Uri;
-use sqlx::PgPool;
-use zero2prod::get_configuration;
+use sqlx::{Connection, PgConnection, PgPool};
+use uuid::Uuid;
+use zero2prod::{DatabaseSettings, get_configuration};
 
 #[tokio::test]
 async fn health_check_works() {
@@ -97,6 +98,46 @@ impl TestApp {
     }
 }
 
+async fn configure_database(mut config: DatabaseSettings) -> PgPool {
+    config.database_name = format!("test_{}", Uuid::new_v4());
+
+    // Create database
+    let maintenance_settings = DatabaseSettings {
+        database_name: "postgres".to_string(),
+        username: "postgres".to_string(),
+        password: "password".to_string(),
+        host: config.host.clone(),
+        port: config.port,
+    };
+
+    let mut connection = PgConnection::connect(&maintenance_settings.connection_string())
+        .await
+        .expect("Failed to connect to Postgres");
+
+    sqlx::query(
+        format!(
+            "CREATE DATABASE \"{}\" WITH OWNER \"{}\";",
+            config.database_name, config.username,
+        )
+        .as_str(),
+    )
+    .execute(&mut connection)
+    .await
+    .expect("Failed to create database");
+
+    // Migrate database
+    let connection_pool = PgPool::connect(&config.connection_string())
+        .await
+        .expect("Failed to connect to Postgres");
+
+    sqlx::migrate!("./migrations")
+        .run(&connection_pool)
+        .await
+        .expect("Failed to migrate the database");
+
+    connection_pool
+}
+
 // Launch app in the background
 async fn spawn_app() -> TestApp {
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
@@ -104,10 +145,8 @@ async fn spawn_app() -> TestApp {
         .local_addr()
         .expect("Failed to obtain local socket address");
 
-    let configuration = get_configuration().expect("Failed to read configuration");
-    let db_pool = PgPool::connect(&configuration.database.connection_string())
-        .await
-        .expect("Failed to connect to Postgres");
+    let config = get_configuration().expect("Failed to read configuration");
+    let db_pool = configure_database(config.database).await;
 
     let server = zero2prod::run(listener, db_pool.clone()).expect("Failed to bind address");
     tokio::spawn(server);
