@@ -21,7 +21,8 @@ config = { version = "0.15", default-features = false, features = [
 ] }
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 uuid = { version = "1.18.1", features = ["v4"] }
-env_logger = { version = "0.11" }
+env_logger = "0.11"
+log = "0.4"
 
 
 [dev-dependencies]
