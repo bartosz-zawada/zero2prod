@@ -21,8 +21,8 @@ config = { version = "0.15", default-features = false, features = [
 ] }
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 uuid = { version = "1.18.1", features = ["v4"] }
-env_logger = "0.11"
 tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 
 
 [dev-dependencies]
