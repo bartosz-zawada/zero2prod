@@ -3,12 +3,15 @@ use std::net::{SocketAddr, TcpListener};
 use sqlx::PgPool;
 use tracing::subscriber;
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
+use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
 use zero2prod::{get_configuration, run};
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     // Set up logging
+    LogTracer::init().expect("Failed to set log redirecting to tracing");
+
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     let formatting_layer = BunyanFormattingLayer::new("zero2prod".into(), std::io::stdout);
