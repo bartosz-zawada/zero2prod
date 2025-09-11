@@ -4,6 +4,7 @@ use std::{
 };
 
 use actix_web::http::Uri;
+use secrecy::ExposeSecret;
 use sqlx::{Connection, PgConnection, PgPool};
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use uuid::Uuid;
@@ -123,14 +124,15 @@ async fn configure_database(mut config: DatabaseSettings) -> PgPool {
     let maintenance_settings = DatabaseSettings {
         database_name: "postgres".to_string(),
         username: "postgres".to_string(),
-        password: "password".to_string(),
+        password: "password".into(),
         host: config.host.clone(),
         port: config.port,
     };
 
-    let mut connection = PgConnection::connect(&maintenance_settings.connection_string())
-        .await
-        .expect("Failed to connect to Postgres");
+    let mut connection =
+        PgConnection::connect(maintenance_settings.connection_string().expose_secret())
+            .await
+            .expect("Failed to connect to Postgres");
 
     sqlx::query(
         format!(
@@ -144,7 +146,7 @@ async fn configure_database(mut config: DatabaseSettings) -> PgPool {
     .expect("Failed to create database");
 
     // Migrate database
-    let connection_pool = PgPool::connect(&config.connection_string())
+    let connection_pool = PgPool::connect(config.connection_string().expose_secret())
         .await
         .expect("Failed to connect to Postgres");
 
