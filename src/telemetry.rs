@@ -1,17 +1,19 @@
 use tracing::{Subscriber, subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
-use tracing_subscriber::{EnvFilter, Registry, layer::SubscriberExt};
+use tracing_subscriber::{EnvFilter, Registry, fmt::MakeWriter, layer::SubscriberExt};
 
 /// Compose multiple layer into a `tracing`'s subscriber
-pub fn get_subscriber<S: Into<String>, L: AsRef<str>>(
-    name: S,
-    default_level: L,
-) -> impl Subscriber {
+pub fn get_subscriber<S, L, Sink>(name: S, default_level: L, sink: Sink) -> impl Subscriber
+where
+    S: Into<String>,
+    L: AsRef<str>,
+    Sink: for<'a> MakeWriter<'a> + 'static,
+{
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
-    let formatting_layer = BunyanFormattingLayer::new(name.into(), std::io::stdout);
+    let formatting_layer = BunyanFormattingLayer::new(name.into(), sink);
 
     Registry::default()
         .with(env_filter)

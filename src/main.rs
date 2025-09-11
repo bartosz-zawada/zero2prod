@@ -6,7 +6,7 @@ use zero2prod::{get_configuration, run, telemetry};
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
     // Set up logging
-    let subscriber = telemetry::get_subscriber("zero2prod", "info");
+    let subscriber = telemetry::get_subscriber("zero2prod", "info", std::io::stdout);
     telemetry::init_subscriber(subscriber);
 
     // Read config

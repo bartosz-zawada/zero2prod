@@ -1,9 +1,16 @@
-use std::net::{SocketAddr, TcpListener};
+use std::{
+    net::{SocketAddr, TcpListener},
+    sync::LazyLock,
+};
 
 use actix_web::http::Uri;
 use sqlx::{Connection, PgConnection, PgPool};
+use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use uuid::Uuid;
-use zero2prod::{DatabaseSettings, get_configuration};
+use zero2prod::{
+    DatabaseSettings, get_configuration,
+    telemetry::{get_subscriber, init_subscriber},
+};
 
 #[tokio::test]
 async fn health_check_works() {
@@ -81,6 +88,17 @@ async fn subscribe_returns_400_when_data_is_missing() {
     }
 }
 
+static TRACING: LazyLock<()> = LazyLock::new(|| {
+    let sink = if std::env::var_os("TEST_LOG").is_some() {
+        BoxMakeWriter::new(std::io::stdout)
+    } else {
+        BoxMakeWriter::new(std::io::sink)
+    };
+
+    let subscriber = get_subscriber("test", "debug", sink);
+    init_subscriber(subscriber);
+});
+
 struct TestApp {
     address: SocketAddr,
     db_pool: PgPool,
@@ -140,16 +158,25 @@ async fn configure_database(mut config: DatabaseSettings) -> PgPool {
 
 // Launch app in the background
 async fn spawn_app() -> TestApp {
+    // Enable logging in test
+    LazyLock::force(&TRACING);
+
+    // Bind a random port
     let listener = TcpListener::bind("127.0.0.1:0").expect("Failed to bind random port");
     let address = listener
         .local_addr()
         .expect("Failed to obtain local socket address");
 
+    // Read config
     let config = get_configuration().expect("Failed to read configuration");
+
+    // Set up database
     let db_pool = configure_database(config.database).await;
 
+    // Run server as a separate task
     let server = zero2prod::run(listener, db_pool.clone()).expect("Failed to bind address");
     tokio::spawn(server);
 
+    // Return context information
     TestApp { address, db_pool }
 }
