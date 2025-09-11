@@ -2,52 +2,54 @@ use actix_web::{HttpResponse, Responder, web};
 use chrono::Utc;
 use serde::Deserialize;
 use sqlx::PgPool;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
-pub struct SubscribeData {
+pub struct CreateData {
     name: String,
     email: String,
 }
 
-pub async fn subscribe(
-    form: web::Form<SubscribeData>,
-    connection: web::Data<PgPool>,
-) -> impl Responder {
-    let request_id = Uuid::new_v4();
-    let _guard = info_span!(
-        "Adding a new subscriber",
-        %request_id,
-        subscriber.email = form.email,
-        subscriber.person_name = form.name,
+#[instrument(
+    name = "Adding a new subscriber",
+    skip_all,
+    fields(
+        request_id = %Uuid::new_v4(),
+        subscriber.email = %data.email,
+        subscriber.person_name = %data.name,
     )
-    .entered();
+)]
+pub async fn subscribe(db_pool: web::Data<PgPool>, data: web::Form<CreateData>) -> impl Responder {
+    match insert_subscriber(&db_pool, data.into_inner()).await {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(_) => HttpResponse::InternalServerError().finish(),
+    }
+}
 
-    let query_span = info_span!("Saving new subscriber details in the database");
+#[instrument(
+    name = "Saving new subscriber details in the database",
+    skip_all,
+    fields(subscription_id)
+)]
+pub async fn insert_subscriber(db_pool: &PgPool, data: CreateData) -> Result<(), sqlx::Error> {
+    let id = Uuid::new_v4();
+    tracing::Span::current().record("subscription_id", id.to_string());
 
-    info!(
-        "[{request_id}] Adding email='{}' name='{}' as a new subscriber",
-        form.email, form.name,
-    );
-    match sqlx::query!(
+    sqlx::query!(
         "INSERT INTO subscriptions (id, email, person_name, subscribed_at) VALUES ($1, $2, $3, $4)",
-        Uuid::new_v4(),
-        form.email,
-        form.name,
+        id,
+        data.email,
+        data.name,
         Utc::now(),
     )
-    .execute(connection.get_ref())
-    .instrument(query_span)
+    .execute(db_pool)
     .await
-    {
-        Ok(_) => {
-            info!("[{request_id}] New subscriber details have been saved");
-            HttpResponse::Ok()
-        }
-        Err(e) => {
-            error!("[{request_id}] Failed to execute query: {e:?}");
-            HttpResponse::InternalServerError()
-        }
-    }
+    .map_err(|e| {
+        error!("Failed to execute query: {e:?}");
+        e
+    })?;
+
+    info!("New subscriber details have been saved");
+    Ok(())
 }
