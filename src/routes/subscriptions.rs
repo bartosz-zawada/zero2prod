@@ -15,7 +15,6 @@ pub struct CreateData {
     name = "Adding a new subscriber",
     skip_all,
     fields(
-        request_id = %Uuid::new_v4(),
         subscriber.email = %data.email,
         subscriber.person_name = %data.name,
     )
